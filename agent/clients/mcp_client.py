@@ -23,14 +23,36 @@ class MCPClient:
 
     async def connect(self):
         """Connect to MCP server"""
-        self._streams_context = streamablehttp_client(self.server_url)
-        read_stream, write_stream, _ = await self._streams_context.__aenter__()
+        try:
+            self._streams_context = streamablehttp_client(self.server_url)
+            read_stream, write_stream, _ = await self._streams_context.__aenter__()
 
-        self._session_context = ClientSession(read_stream, write_stream)
-        self.session: ClientSession = await self._session_context.__aenter__()
+            self._session_context = ClientSession(read_stream, write_stream)
+            self.session: ClientSession = await self._session_context.__aenter__()
 
-        init_result = await self.session.initialize()
-        print(init_result.model_dump_json(indent=2))
+            init_result = await self.session.initialize()
+            print(init_result.model_dump_json(indent=2))
+        except Exception as e:
+            # Cleanup on connection failure
+            self.session = None
+            # Try to cleanup context managers but don't fail if they error
+            try:
+                if self._session_context:
+                    try:
+                        await self._session_context.__aexit__(None, None, None)
+                    except Exception:
+                        pass
+                if self._streams_context:
+                    try:
+                        await self._streams_context.__aexit__(None, None, None)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            finally:
+                self._session_context = None
+                self._streams_context = None
+            raise
 
     async def get_tools(self) -> list[dict[str, Any]]:
         """Get available tools from MCP server"""
